@@ -41,9 +41,9 @@ SET(ILASTIK_VERSION ${ILASTIK_VERSION}
     
 external_git_repo (ilastik
     ${ILASTIK_VERSION}
-    http://github.com/janelia-flyem/flyem-ilastik)
-set(ilastik_NAME ilastik)
-set(ilastik_SRC_DIR "${BUILDEM_DIR}/src/${ilastik_NAME}")
+    http://github.com/janelia-flyem/flyem-ilastik
+    ilastik) # Override ilastik_NAME and ilastik_SRC_DIR variables by providing this extra arg
+    
 set(lazyflow_SRC_DIR "${ilastik_SRC_DIR}/lazyflow")
 
 if("${ILASTIK_VERSION}" STREQUAL "master")
@@ -106,21 +106,86 @@ endif()
 file(RELATIVE_PATH ILASTIK_DIR_RELATIVE ${BUILDEM_DIR} ${ilastik_SRC_DIR})
 file(RELATIVE_PATH PYTHON_PREFIX_RELATIVE ${BUILDEM_DIR} ${PYTHON_PREFIX})
 
-# Add environment setting script
-set(SETENV_ILASTIK setenv_ilastik_gui)
-configure_file(${TEMPLATE_DIR}/${SETENV_ILASTIK}.in ${BUILDEM_DIR}/bin/${SETENV_ILASTIK}.sh @ONLY)
+##############################
+### Generate setenv script ###
+##############################
 
-# Add headless launch script
-set(LAUNCH_ILASTIK ilastik/ilastik/workflows/pixelClassification/pixelClassificationWorkflowMainHeadless.py)
-configure_file(${TEMPLATE_DIR}/ilastik_script.template ${BUILDEM_DIR}/bin/ilastik_headless @ONLY)
+set(SETENV_ILASTIK_HEADLESS setenv_ilastik_headless)
 
-# Add headless test script
-set(LAUNCH_ILASTIK ilastik/tests/test_applets/pixelClassification/testPixelClassificationHeadless.py)
-configure_file(${TEMPLATE_DIR}/ilastik_script.template ${BUILDEM_DIR}/bin/ilastik_headless_test @ONLY)
+# Create a cmake helper script to execute at build-time
+set( ilastik_setenv_script_creation_helper
+	 "${CMAKE_CURRENT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/generate_ilastik_setenv.cmake" )
+file( WRITE ${ilastik_setenv_script_creation_helper}
+		    "configure_file(${TEMPLATE_DIR}/${SETENV_ILASTIK_HEADLESS}.in ${BUILDEM_DIR}/bin/${SETENV_ILASTIK_HEADLESS}.sh @ONLY)" )
 
-# Add headless launch script for cluster processing
-set(LAUNCH_ILASTIK ilastik/ilastik/workflows/pixelClassification/pixelClassificationClusterized.py)
-configure_file(${TEMPLATE_DIR}/ilastik_script.template ${BUILDEM_DIR}/bin/ilastik_clusterized @ONLY)
+# Generate environment setting script at build time using the helper cmake-script
+ExternalProject_add_step( ${ilastik_NAME} ilastik_headless_setenv
+	DEPENDEES   download
+	COMMAND ${CMAKE_COMMAND} 
+			-DSETENV_ILASTIK=${SETENV_ILASTIK_HEADLESS}
+			-DILASTIK_DIR_RELATIVE=${ILASTIK_DIR_RELATIVE}
+			-DPYTHON_PREFIX_RELATIVE=${PYTHON_PREFIX_RELATIVE}
+			-DBUILDEM_LD_LIBRARY_VAR=${BUILDEM_LD_LIBRARY_VAR}
+			-P ${ilastik_setenv_script_creation_helper}
+	COMMENT "Creating ${SETENV_ILASTIK_HEADLESS}.sh" )
+
+#######################################
+### Generate headless launch script ###
+#######################################
+
+# Create a cmake helper script to execute at build-time
+set( ilastik_headless_launch_creation_helper
+	 "${CMAKE_CURRENT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/generate_ilastik_headless_launch.cmake" )
+file( WRITE ${ilastik_headless_launch_creation_helper}
+		    "configure_file(${TEMPLATE_DIR}/ilastik_script.template ${BUILDEM_DIR}/bin/ilastik_headless @ONLY)" )
+
+# Generate environment setting script at build time using the helper cmake-script
+ExternalProject_add_step( ${ilastik_NAME} ilastik_headless
+	DEPENDEES   ilastik_headless_setenv
+	COMMAND ${CMAKE_COMMAND} 
+			-DSETENV_ILASTIK=${SETENV_ILASTIK_HEADLESS}
+			-DLAUNCH_ILASTIK="ilastik/ilastik/workflows/pixelClassification/pixelClassificationWorkflowMainHeadless.py"
+			-P ${ilastik_headless_launch_creation_helper}
+	COMMENT "Creating launch script: ilastik_headless" )
+
+#####################################
+### Generate headless test script ###
+#####################################
+
+# Create a cmake helper script to execute at build-time
+set( ilastik_headless_test_creation_helper
+	 "${CMAKE_CURRENT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/generate_ilastik_headless_test.cmake" )
+file( WRITE ${ilastik_headless_test_creation_helper}
+		    "configure_file(${TEMPLATE_DIR}/ilastik_script.template ${BUILDEM_DIR}/bin/ilastik_headless_test @ONLY)" )
+
+# Generate environment setting script at build time using the helper cmake-script
+ExternalProject_add_step( ${ilastik_NAME} ilastik_headless_test
+	DEPENDEES   ilastik_headless
+	DEPENDERS   test
+	COMMAND ${CMAKE_COMMAND} 
+			-DSETENV_ILASTIK=${SETENV_ILASTIK_HEADLESS}
+			-DLAUNCH_ILASTIK="ilastik/tests/test_applets/pixelClassification/testPixelClassificationHeadless.py"
+			-P ${ilastik_headless_test_creation_helper}
+	COMMENT "Creating ilastik headless test script" )
+
+##########################################
+### Generate clusterized launch script ###
+##########################################
+
+# Create a cmake helper script to execute at build-time
+set( ilastik_clusterized_creation_helper
+	 "${CMAKE_CURRENT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/generate_ilastik_clusterized_launch.cmake" )
+file( WRITE ${ilastik_clusterized_creation_helper}
+		    "configure_file(${TEMPLATE_DIR}/ilastik_script.template ${BUILDEM_DIR}/bin/ilastik_clusterized @ONLY)" )
+
+# Generate environment setting script at build time using the helper cmake-script
+ExternalProject_add_step( ${ilastik_NAME} ilastik_clusterized_launch
+	DEPENDEES   download
+	COMMAND ${CMAKE_COMMAND} 
+			-DSETENV_ILASTIK=${SETENV_ILASTIK_HEADLESS}
+			-DLAUNCH_ILASTIK="ilastik/ilastik/workflows/pixelClassification/pixelClassificationClusterized.py"
+			-P ${ilastik_clusterized_creation_helper}
+	COMMENT "Creating ilastik clusterized launch" )
 
 set_target_properties(${ilastik_NAME} PROPERTIES EXCLUDE_FROM_ALL ON)
 
